@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 
@@ -23,12 +23,57 @@ export default function AllPerks() {
 
   // ==================== SIDE EFFECTS WITH useEffect HOOK ====================
 
- /*
- TODO: HOOKS TO IMPLEMENT
- * useEffect Hook #1: Initial Data Loading
- * useEffect Hook #2: Auto-search on Input Change
+  /*
+   useEffect Hook #1: Initial Data Loading
+   - Run once on mount to load perks from server
 
-*/
+   useEffect Hook #2: Auto-search on Input Change
+   - Debounced effect that triggers loadAllPerks when
+     searchQuery or merchantFilter change so users don't
+     have to click "Search Now" every time.
+  */
+
+  // Wrap loadAllPerks in useCallback so effects can depend on it
+  const loadAllPerks = useCallback(async () => {
+    setError('')
+    setLoading(true)
+
+    try {
+      const res = await api.get('/perks/all', {
+        params: {
+          search: searchQuery.trim() || undefined,
+          merchant: merchantFilter.trim() || undefined
+        }
+      })
+
+      setPerks(res.data.perks)
+
+    } catch (err) {
+      console.error('Failed to load perks:', err)
+      setError(err?.response?.data?.message || 'Failed to load perks')
+
+    } finally {
+      setLoading(false)
+    }
+  }, [searchQuery, merchantFilter])
+
+  // Effect #1: initial load on mount
+  useEffect(() => {
+    loadAllPerks()
+    // We only want to run this on mount; loadAllPerks depends on searchQuery/merchantFilter
+    // but initial load should use their current values. Using an empty deps array
+    // prevents re-running on user input — the debounced effect below handles that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Effect #2: auto-search with debounce when searchQuery or merchantFilter change
+  useEffect(() => {
+    const id = setTimeout(() => {
+      loadAllPerks()
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(id)
+  }, [searchQuery, merchantFilter, loadAllPerks])
 
   
   useEffect(() => {
@@ -48,38 +93,17 @@ export default function AllPerks() {
   }, [perks]) // Dependency: re-run when perks array changes
 
   
-  async function loadAllPerks() {
-    // Reset error state before new request
-    setError('')
-    
-    // Show loading indicator
-    setLoading(true)
-    
-    try {
-      // Make GET request to /api/perks/all with query parameters
-      const res = await api.get('/perks/all', {
-        params: {
-          // Only include search param if searchQuery is not empty
-          search: searchQuery.trim() || undefined,
-          // Only include merchant param if merchantFilter is not empty
-          merchant: merchantFilter.trim() || undefined
-        }
-      })
-      
-      // Update perks state with response data
-      setPerks(res.data.perks)
-      
-    } catch (err) {
-      // Handle errors (network failure, server error, etc.)
-      console.error('Failed to load perks:', err)
-      setError(err?.response?.data?.message || 'Failed to load perks')
-      
-    } finally {
-      // This block runs whether try succeeds or catch handles error
-      // Always stop loading indicator
-      setLoading(false)
+  // Note: loadAllPerks is provided above via useCallback. The original
+  // duplicate async function has been removed to avoid name collision.
+
+  // Keep merchantFilter in sync with available merchants. If the currently
+  // selected merchant is removed from uniqueMerchants (e.g. due to a data
+  // refresh), clear the filter so the UI doesn't show an invalid selection.
+  useEffect(() => {
+    if (merchantFilter && !uniqueMerchants.includes(merchantFilter)) {
+      setMerchantFilter('')
     }
-  }
+  }, [merchantFilter, uniqueMerchants])
 
   // ==================== EVENT HANDLERS ====================
 
@@ -136,7 +160,8 @@ export default function AllPerks() {
                 type="text"
                 className="input"
                 placeholder="Enter perk name..."
-                
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
               />
               <p className="text-xs text-zinc-500 mt-1">
                 Auto-searches as you type, or press Enter / click Search
@@ -151,7 +176,8 @@ export default function AllPerks() {
               </label>
               <select
                 className="input"
-                
+                value={merchantFilter}
+                onChange={e => setMerchantFilter(e.target.value)}
               >
                 <option value="">All Merchants</option>
                 
@@ -289,4 +315,3 @@ export default function AllPerks() {
     </div>
   )
 }
-
